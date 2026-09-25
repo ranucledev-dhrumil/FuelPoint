@@ -13,13 +13,13 @@ import { useMemo, useState } from "react";
 import {
   DonutChart,
   HorizontalBarChart,
-  MultiLineChart,
   TrendAreaChart,
 } from "@/components/admin/charts";
 import { PageHeader, Panel, StatCard } from "@/components/admin/primitives";
 import { Button } from "@/components/ui/button";
 import { useAdmin } from "@/lib/admin-store";
 import {
+  adminService,
   buildOverview,
   buildSeries,
   formatCurrency,
@@ -57,10 +57,12 @@ function DashboardPage() {
   const { customers, workers, groups, transactions } = useAdmin();
   const [days, setDays] = useState<number>(30);
 
-  const overview = useMemo(
-    () => buildOverview(customers, workers, groups, transactions),
-    [customers, workers, groups, transactions],
-  );
+  const overview = useMemo(() => {
+    const cutoff = adminService.getToday().getTime() - days * 86400000;
+    const periodCustomers = customers.filter(c => new Date(c.registeredAt).getTime() >= cutoff);
+    const periodTransactions = transactions.filter(t => new Date(t.createdAt).getTime() >= cutoff);
+    return buildOverview(periodCustomers, workers, groups, periodTransactions);
+  }, [customers, workers, groups, transactions, days]);
   const series = useMemo(
     () => buildSeries(customers, transactions, days),
     [customers, transactions, days],
@@ -110,7 +112,8 @@ function DashboardPage() {
           value={formatNumber(overview.totalCustomers)}
           icon={Users}
           delta={delta("registrations")}
-          hint="vs previous period"
+          hint="in this period"
+          to="/customers"
         />
         <StatCard
           label="Total workers"
@@ -118,20 +121,7 @@ function DashboardPage() {
           icon={Wrench}
           tone="teal"
           hint={`${overview.activeWorkers} active now`}
-        />
-        <StatCard
-          label="Discount groups"
-          value={formatNumber(overview.totalGroups)}
-          icon={Tags}
-          tone="navy"
-          hint={`${overview.unassignedCustomers} unassigned customers`}
-        />
-        <StatCard
-          label="Total scans"
-          value={formatNumber(overview.totalTransactions)}
-          icon={Activity}
-          delta={delta("transactions")}
-          hint="transactions processed"
+          to="/workers"
         />
         <StatCard
           label="Total discount given"
@@ -140,26 +130,14 @@ function DashboardPage() {
           tone="teal"
           delta={delta("discount")}
           hint={`avg ${overview.avgDiscountPercent.toFixed(2)}% of sales`}
+          to="/reports"
         />
         <StatCard
           label="Today's transactions"
           value={formatNumber(overview.todayTransactions)}
           icon={CalendarClock}
           hint={`${formatCurrency(overview.todayDiscount)} discount today`}
-        />
-        <StatCard
-          label="New registrations"
-          value={formatNumber(overview.newRegistrations7d)}
-          icon={UserPlus}
-          tone="warning"
-          hint="last 7 days"
-        />
-        <StatCard
-          label="Customers who fuelled"
-          value={formatNumber(overview.usedPumpCustomers)}
-          icon={TrendingUp}
-          tone="navy"
-          hint={`${overview.activeCustomers} active customers`}
+          to="/reports"
         />
       </div>
 
@@ -172,7 +150,15 @@ function DashboardPage() {
           >
             <TrendAreaChart data={series} dataKey="transactions" height={280} />
           </Panel>
-          <Panel title="Group-wise customers" description="Distribution across discount groups">
+          <Panel 
+            title="Group-wise customers" 
+            description="Distribution across discount groups"
+            actions={
+              <div className="flex h-6 items-center rounded bg-muted px-2 text-xs font-semibold text-muted-foreground">
+                {groups.length} groups
+              </div>
+            }
+          >
             <DonutChart
               data={dist.map((g) => ({ name: g.name, value: g.customers }))}
               height={280}
@@ -190,36 +176,23 @@ function DashboardPage() {
               valueFormatter={formatCurrency}
             />
           </Panel>
-          <Panel title="Registrations vs scans" description="Customer growth against usage">
-            <MultiLineChart
-              data={series}
-              height={280}
-              series={[
-                { key: "registrations", name: "Registrations", color: "var(--chart-4)" },
-                { key: "transactions", name: "Scans", color: "var(--primary)" },
-              ]}
-            />
-          </Panel>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-5">
           <Panel
             title="Worker scanning activity"
             description="Top performers by scans"
-            className="lg:col-span-2"
           >
             <HorizontalBarChart
               data={activity}
               dataKey="scans"
-              height={320}
+              height={280}
               color="var(--primary)"
             />
           </Panel>
+        </div>
 
+        <div className="grid gap-6">
           <Panel
             title="Recent transactions"
             description="Latest scans processed at the pump"
-            className="lg:col-span-3"
             actions={
               <Button asChild variant="outline" size="sm">
                 <Link to="/reports">View reports</Link>

@@ -1,10 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Activity, BadgePercent, Search, UserCheck, Wrench } from "lucide-react";
+import { Activity, BadgePercent, Search, UserCheck, Wrench, Pencil, Trash2, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { HorizontalBarChart } from "@/components/admin/charts";
 import { Column, DataTable } from "@/components/admin/DataTable";
 import { PageHeader, Panel, StatCard, StatusBadge } from "@/components/admin/primitives";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +15,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -49,11 +61,15 @@ export const Route = createFileRoute("/_admin/workers")({
 });
 
 function WorkersPage() {
-  const { workers, transactions } = useAdmin();
+  const { workers, transactions, saveWorker, deleteWorker } = useAdmin();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [shift, setShift] = useState("all");
   const [selected, setSelected] = useState<Worker | null>(null);
+  
+  const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [deletingWorker, setDeletingWorker] = useState<Worker | null>(null);
 
   const filtered = useMemo(
     () =>
@@ -77,19 +93,7 @@ function WorkersPage() {
     [workers],
   );
 
-  const scansData = useMemo(
-    () =>
-      [...workers].sort((a, b) => b.scans - a.scans).map((w) => ({ name: w.name, scans: w.scans })),
-    [workers],
-  );
 
-  const discountData = useMemo(
-    () =>
-      [...workers]
-        .sort((a, b) => b.discountProcessed - a.discountProcessed)
-        .map((w) => ({ name: w.name, discount: w.discountProcessed })),
-    [workers],
-  );
 
   const columns: Column<Worker>[] = [
     {
@@ -158,6 +162,31 @@ function WorkersPage() {
         <span className="text-xs text-muted-foreground">{relativeDays(w.lastActivity)}</span>
       ),
     },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      render: (w) => (
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={() => setEditingWorker(w)}
+          >
+            <Pencil className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setDeletingWorker(w)}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   const workerTxns = selected
@@ -166,7 +195,31 @@ function WorkersPage() {
 
   return (
     <>
-      <PageHeader title="Workers" subtitle="Scanning activity and discount handling per worker." />
+      <PageHeader
+        title="Workers"
+        subtitle="Scanning activity and discount handling per worker."
+        actions={
+          <Button
+            onClick={() => setEditingWorker({
+              id: "",
+              name: "",
+              email: "",
+              phone: "",
+              shift: "Morning",
+              status: "active",
+              joinedAt: new Date().toISOString(),
+              scans: 0,
+              customersScanned: 0,
+              transactions: 0,
+              discountProcessed: 0,
+              lastActivity: new Date().toISOString(),
+              password: "",
+            })}
+          >
+            <Plus className="size-4" /> New Worker
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total workers" value={formatNumber(workers.length)} icon={Wrench} />
@@ -229,45 +282,8 @@ function WorkersPage() {
             </SelectContent>
           </Select>
         </div>
-        <DataTable rows={filtered} columns={columns} pageSize={8} onRowClick={setSelected} />
+        <DataTable rows={filtered} columns={columns} pageSize={10} onRowClick={setSelected} />
       </Panel>
-
-      {/* Worker Performance Analytics */}
-      <div className="mt-8">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">
-            Worker performance
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            Comparative breakdown of scans handled and discount processed by team members
-          </p>
-        </div>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Panel title="Scans by worker" description="Ranked by total scans handled">
-            <HorizontalBarChart
-              data={scansData}
-              dataKey="scans"
-              height={320}
-              color="var(--primary)"
-              yAxisWidth={110}
-            />
-          </Panel>
-
-          <Panel
-            title="Discount processed by worker"
-            description="Ranked by total discount value processed"
-          >
-            <HorizontalBarChart
-              data={discountData}
-              dataKey="discount"
-              height={320}
-              color="var(--teal)"
-              valueFormatter={formatCurrency}
-              yAxisWidth={110}
-            />
-          </Panel>
-        </div>
-      </div>
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
         <DialogContent className="sm:max-w-xl">
@@ -276,7 +292,7 @@ function WorkersPage() {
               <DialogHeader>
                 <DialogTitle>{selected.name}</DialogTitle>
                 <DialogDescription>
-                  {selected.id} · {selected.shift} shift · joined {formatDate(selected.joinedAt)}
+                  {selected.email} · {selected.id} · {selected.shift} shift · joined {formatDate(selected.joinedAt)}
                 </DialogDescription>
               </DialogHeader>
 
@@ -298,7 +314,7 @@ function WorkersPage() {
                 <p className="border-b border-border px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase">
                   Recent activity
                 </p>
-                <ul className="max-h-64 divide-y divide-border overflow-y-auto">
+                <ul className="scrollbar-thin max-h-64 divide-y divide-border overflow-y-auto">
                   {workerTxns.map((t) => (
                     <li
                       key={t.id}
@@ -328,14 +344,194 @@ function WorkersPage() {
 
               <div className="flex items-center justify-between gap-3">
                 <StatusBadge status={selected.status} />
-                <Button variant="outline" onClick={() => setSelected(null)}>
-                  Close
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => {
+                      setDeletingWorker(selected);
+                      setSelected(null);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setEditingWorker(selected);
+                      setSelected(null);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button variant="default" onClick={() => setSelected(null)}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Worker Dialog */}
+      <Dialog open={!!editingWorker} onOpenChange={(o) => !o && setEditingWorker(null)}>
+        <DialogContent className="sm:max-w-md">
+          {editingWorker && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{editingWorker.id ? "Edit Worker" : "Create Worker"}</DialogTitle>
+                <DialogDescription>
+                  Update basic info and shift assignment.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="w-name">Full name</Label>
+                    <Input
+                      id="w-name"
+                      placeholder="e.g. Ramesh Singh"
+                      value={editingWorker.name}
+                      onChange={(e) => setEditingWorker({ ...editingWorker, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="w-phone">Phone number</Label>
+                    <Input
+                      id="w-phone"
+                      placeholder="e.g. 9876543210"
+                      value={editingWorker.phone}
+                      onChange={(e) => setEditingWorker({ ...editingWorker, phone: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="w-email">Email</Label>
+                  <Input
+                    id="w-email"
+                    type="email"
+                    placeholder="e.g. ramesh@fuelpoint.in"
+                    value={editingWorker.email}
+                    onChange={(e) => setEditingWorker({ ...editingWorker, email: e.target.value })}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="w-password">{editingWorker.id ? "New Password" : "Password"}</Label>
+                    <Input
+                      id="w-password"
+                      type="password"
+                      placeholder={editingWorker.id ? "Leave blank to keep unchanged" : "Create password"}
+                      value={editingWorker.password || ""}
+                      onChange={(e) => setEditingWorker({ ...editingWorker, password: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="w-confirm-password">Confirm Password</Label>
+                    <Input
+                      id="w-confirm-password"
+                      type="password"
+                      placeholder="Re-enter password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Shift</Label>
+                    <Select
+                      value={editingWorker.shift}
+                      onValueChange={(v: "Morning" | "Evening" | "Night") => setEditingWorker({ ...editingWorker, shift: v })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Morning">Morning</SelectItem>
+                        <SelectItem value="Evening">Evening</SelectItem>
+                        <SelectItem value="Night">Night</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select
+                      value={editingWorker.status}
+                      onValueChange={(v: "active" | "offline" | "suspended") => setEditingWorker({ ...editingWorker, status: v })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="offline">Offline</SelectItem>
+                        <SelectItem value="suspended">Suspended</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <Button variant="outline" onClick={() => {
+                  setEditingWorker(null);
+                  setConfirmPassword("");
+                }}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!editingWorker.name.trim() || !editingWorker.email.trim() || !editingWorker.phone.trim()) {
+                      toast.error("Name, email, and phone are required.");
+                      return;
+                    }
+                    if (editingWorker.password && editingWorker.password !== confirmPassword) {
+                      toast.error("Passwords do not match.");
+                      return;
+                    }
+                    const workerToSave = { ...editingWorker };
+                    if (!workerToSave.id) {
+                      workerToSave.id = `wrk-${Date.now()}`;
+                    }
+                    saveWorker(workerToSave);
+                    toast.success(editingWorker.id ? "Worker updated" : "Worker created");
+                    setEditingWorker(null);
+                    setConfirmPassword("");
+                  }}
+                >
+                  Save changes
                 </Button>
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Worker Alert */}
+      <AlertDialog open={!!deletingWorker} onOpenChange={(o) => !o && setDeletingWorker(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the worker profile for{" "}
+              <span className="font-semibold text-foreground">{deletingWorker?.name}</span>.
+              They will no longer be able to log in or process scans.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deletingWorker) {
+                  deleteWorker(deletingWorker.id);
+                  toast.success("Worker deleted");
+                  setDeletingWorker(null);
+                }
+              }}
+            >
+              Delete worker
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

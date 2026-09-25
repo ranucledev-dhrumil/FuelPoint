@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, ChevronsUpDown } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export interface Column<T> {
   key: string;
@@ -15,17 +16,21 @@ export function TablePagination({
   currentPage,
   totalPages,
   pageSize,
+  pageSizeOptions = [10, 25, 50, 100],
   totalItems,
   currentCount,
   onPageChange,
+  onPageSizeChange,
   className,
 }: {
   currentPage: number;
   totalPages: number;
   pageSize: number;
+  pageSizeOptions?: number[];
   totalItems: number;
   currentCount: number;
   onPageChange: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
   className?: string;
 }) {
   const safePage = Math.max(1, Math.min(currentPage, Math.max(1, totalPages)));
@@ -39,9 +44,31 @@ export function TablePagination({
         className,
       )}
     >
-      <p className="text-xs text-muted-foreground">
-        Showing {from}–{to} of {totalItems}
-      </p>
+      <div className="flex items-center gap-3">
+        <p className="text-xs text-muted-foreground">
+          Showing {from}–{to} of {totalItems}
+        </p>
+        {onPageSizeChange && (
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-medium text-muted-foreground">Rows per page</p>
+            <Select
+              value={pageSize.toString()}
+              onValueChange={(val) => onPageSizeChange(Number(val))}
+            >
+              <SelectTrigger className="h-7 w-[60px] text-xs px-2 cursor-pointer">
+                <SelectValue placeholder={pageSize} />
+              </SelectTrigger>
+              <SelectContent>
+                {pageSizeOptions.map((size) => (
+                  <SelectItem key={size} value={size.toString()} className="text-xs cursor-pointer">
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
       <div className="flex items-center gap-1">
         <button
           type="button"
@@ -86,7 +113,7 @@ export function TablePagination({
 export function DataTable<T extends { id: string }>({
   rows,
   columns,
-  pageSize = 8,
+  pageSize = 10,
   emptyMessage = "No records match the current filters.",
   onRowClick,
 }: {
@@ -98,8 +125,9 @@ export function DataTable<T extends { id: string }>({
 }) {
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null);
   const [page, setPage] = useState(1);
+  const [actualPageSize, setActualPageSize] = useState(pageSize);
 
-  useEffect(() => setPage(1), [rows.length, sort]);
+  useEffect(() => setPage(1), [rows.length, sort, actualPageSize]);
 
   const sorted = useMemo(() => {
     if (!sort) return rows;
@@ -116,9 +144,9 @@ export function DataTable<T extends { id: string }>({
     });
   }, [rows, sort, columns]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(sorted.length / actualPageSize));
   const safePage = Math.min(page, totalPages);
-  const slice = sorted.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const slice = sorted.slice((safePage - 1) * actualPageSize, safePage * actualPageSize);
 
   const toggleSort = (key: string) =>
     setSort((prev) =>
@@ -143,7 +171,7 @@ export function DataTable<T extends { id: string }>({
                     <button
                       onClick={() => toggleSort(col.key)}
                       className={cn(
-                        "inline-flex items-center gap-1 transition-colors hover:text-foreground",
+                        "inline-flex items-center gap-1 cursor-pointer transition-colors hover:text-foreground",
                         sort?.key === col.key && "text-primary",
                       )}
                     >
@@ -198,10 +226,12 @@ export function DataTable<T extends { id: string }>({
       <TablePagination
         currentPage={safePage}
         totalPages={totalPages}
-        pageSize={pageSize}
+        pageSize={actualPageSize}
+        pageSizeOptions={Array.from(new Set([pageSize, 10, 25, 50, 100])).sort((a, b) => a - b)}
         totalItems={sorted.length}
         currentCount={slice.length}
         onPageChange={setPage}
+        onPageSizeChange={setActualPageSize}
       />
     </div>
   );

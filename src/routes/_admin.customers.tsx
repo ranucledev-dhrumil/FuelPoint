@@ -1,10 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Fuel, Search, UserPlus, Users, UserCheck } from "lucide-react";
+import { Fuel, Search, UserPlus, Users, UserCheck, Pencil, Trash2, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Column, DataTable } from "@/components/admin/DataTable";
 import { GroupPill, PageHeader, Panel, StatCard, StatusBadge } from "@/components/admin/primitives";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -52,11 +64,15 @@ export const Route = createFileRoute("/_admin/customers")({
 });
 
 function CustomersPage() {
-  const { customers, groups, transactions, workers, assignCustomerGroup } = useAdmin();
+  const { customers, groups, transactions, workers, assignCustomerGroup, saveCustomer, deleteCustomer } = useAdmin();
   const [query, setQuery] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null);
 
   const overview = useMemo(
     () => buildOverview(customers, workers, groups, transactions),
@@ -103,7 +119,7 @@ function CustomersPage() {
       sortValue: (c) => groupName(c.groupId),
       render: (c) =>
         c.groupId === DEFAULT_GROUP_ID ? (
-          <span className="inline-flex items-center rounded-full bg-warning/18 px-2.5 py-1 text-xs font-semibold text-warning-foreground">
+          <span className="inline-flex items-center rounded-full bg-warning/18 px-2.5 py-1 text-xs font-semibold text-warning">
             Unassigned
           </span>
         ) : (
@@ -138,6 +154,31 @@ function CustomersPage() {
       sortValue: (c) => c.lastActivity ?? "",
       render: (c) => <span className="text-xs text-muted-foreground">{relativeDays(c.lastActivity)}</span>,
     },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      render: (c) => (
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={() => setEditingCustomer(c)}
+          >
+            <Pencil className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setDeletingCustomer(c)}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -146,26 +187,47 @@ function CustomersPage() {
         title="Customers"
         subtitle="Registrations, group assignment and fuelling history."
         actions={
-          <Button
-            variant="outline"
-            onClick={() =>
-              exportCsv(
-                "customers.csv",
-                filtered.map((c) => ({
-                  ID: c.id,
-                  Name: c.name,
-                  Phone: c.phone,
-                  Group: groupName(c.groupId),
-                  Registered: formatDate(c.registeredAt),
-                  Transactions: c.transactions,
-                  Discount: c.discountReceived,
-                  Status: c.status,
-                })),
-              )
-            }
-          >
-            Export CSV
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() =>
+                exportCsv(
+                  "customers.csv",
+                  filtered.map((c) => ({
+                    ID: c.id,
+                    Name: c.name,
+                    Phone: c.phone,
+                    Group: groupName(c.groupId),
+                    Registered: formatDate(c.registeredAt),
+                    Transactions: c.transactions,
+                    Discount: c.discountReceived,
+                    Status: c.status,
+                  })),
+                )
+              }
+            >
+              Export CSV
+            </Button>
+            <Button
+              onClick={() => setEditingCustomer({
+                id: "",
+                name: "",
+                phone: "",
+                email: "",
+                vehicle: "",
+                groupId: DEFAULT_GROUP_ID,
+                status: "active",
+                registeredAt: new Date().toISOString(),
+                lastActivity: null,
+                transactions: 0,
+                totalSpend: 0,
+                discountReceived: 0,
+                password: "",
+              })}
+            >
+              <Plus className="size-4" /> New Customer
+            </Button>
+          </div>
         }
       />
 
@@ -243,13 +305,43 @@ function CustomersPage() {
           {selected && (
             <>
               <DialogHeader>
-                <DialogTitle>{selected.name}</DialogTitle>
-                <DialogDescription>
-                  {selected.id} · {selected.phone} · {selected.vehicle}
-                </DialogDescription>
+                <div className="flex items-start justify-between pr-6">
+                  <div>
+                    <DialogTitle>{selected.name}</DialogTitle>
+                    <DialogDescription>
+                      {selected.email} · {selected.id} · {selected.phone} · {selected.vehicle}
+                    </DialogDescription>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      title="Edit customer"
+                      onClick={() => {
+                        setEditingCustomer(selected);
+                        setSelectedId(null);
+                      }}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      title="Delete customer"
+                      onClick={() => {
+                        setDeletingCustomer(selected);
+                        setSelectedId(null);
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                </div>
               </DialogHeader>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 mt-2">
                 {[
                   ["Registered", formatDate(selected.registeredAt)],
                   ["Transactions", formatNumber(selected.transactions)],
@@ -296,7 +388,7 @@ function CustomersPage() {
                 <p className="border-b border-border px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase">
                   Recent activity
                 </p>
-                <ul className="max-h-56 divide-y divide-border overflow-y-auto">
+                <ul className="scrollbar-thin max-h-56 divide-y divide-border overflow-y-auto">
                   {selectedTxns.map((t) => (
                     <li key={t.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
                       <span>
@@ -324,6 +416,170 @@ function CustomersPage() {
           )}
         </DialogContent>
       </Dialog>
+      {/* Edit Customer Dialog */}
+      <Dialog open={!!editingCustomer} onOpenChange={(o) => {
+        if (!o) {
+          setEditingCustomer(null);
+          setConfirmPassword("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          {editingCustomer && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{editingCustomer.id ? "Edit Customer" : "Create Customer"}</DialogTitle>
+                <DialogDescription>
+                  Update contact details or manually override customer status.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="c-name">Full name</Label>
+                    <Input
+                      id="c-name"
+                      placeholder="e.g. Anil Kumar"
+                      value={editingCustomer.name}
+                      onChange={(e) => setEditingCustomer({ ...editingCustomer, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="c-phone">Phone number</Label>
+                    <Input
+                      id="c-phone"
+                      placeholder="e.g. 9876543210"
+                      value={editingCustomer.phone}
+                      onChange={(e) => setEditingCustomer({ ...editingCustomer, phone: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="c-email">Email</Label>
+                  <Input
+                    id="c-email"
+                    type="email"
+                    placeholder="e.g. anil@example.com"
+                    value={editingCustomer.email}
+                    onChange={(e) => setEditingCustomer({ ...editingCustomer, email: e.target.value })}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="c-password">{editingCustomer.id ? "New Password" : "Password"}</Label>
+                    <Input
+                      id="c-password"
+                      type="password"
+                      placeholder={editingCustomer.id ? "Leave blank to keep unchanged" : "Create password"}
+                      value={editingCustomer.password || ""}
+                      onChange={(e) => setEditingCustomer({ ...editingCustomer, password: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="c-confirm-password">Confirm Password</Label>
+                    <Input
+                      id="c-confirm-password"
+                      type="password"
+                      placeholder="Re-enter password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Group Assignment</Label>
+                    <Select
+                      value={editingCustomer.groupId}
+                      onValueChange={(v) => setEditingCustomer({ ...editingCustomer, groupId: v })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {groups.filter(g => g.active || g.id === editingCustomer.groupId).map((g) => (
+                          <SelectItem key={g.id} value={g.id}>
+                            {g.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select
+                      value={editingCustomer.status}
+                      onValueChange={(v: "active" | "inactive" | "pending") => setEditingCustomer({ ...editingCustomer, status: v })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <Button variant="outline" onClick={() => {
+                  setEditingCustomer(null);
+                  setConfirmPassword("");
+                }}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!editingCustomer.name.trim() || !editingCustomer.email.trim() || !editingCustomer.phone.trim()) {
+                      toast.error("Name, email, and phone are required.");
+                      return;
+                    }
+                    if (editingCustomer.password && editingCustomer.password !== confirmPassword) {
+                      toast.error("Passwords do not match.");
+                      return;
+                    }
+                    const customerToSave = { ...editingCustomer };
+                    if (!customerToSave.id) {
+                      customerToSave.id = `cus-${Date.now()}`;
+                    }
+                    saveCustomer(customerToSave);
+                    toast.success(editingCustomer.id ? "Customer updated" : "Customer created");
+                    setEditingCustomer(null);
+                    setConfirmPassword("");
+                  }}
+                >
+                  Save changes
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Customer Alert */}
+      <AlertDialog open={!!deletingCustomer} onOpenChange={(o) => !o && setDeletingCustomer(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the customer account for{" "}
+              <span className="font-semibold text-foreground">{deletingCustomer?.name}</span>. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deletingCustomer) {
+                  deleteCustomer(deletingCustomer.id);
+                  toast.success("Customer deleted");
+                  setDeletingCustomer(null);
+                }
+              }}
+            >
+              Delete customer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
